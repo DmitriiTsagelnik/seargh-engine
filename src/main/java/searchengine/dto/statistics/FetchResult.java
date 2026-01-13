@@ -5,8 +5,8 @@ import lombok.Data;
 
 @Data
 @AllArgsConstructor
-public class StartIndexingResponse {
-
-    private boolean result;
-    private String error;
+public class FetchResult {
+    private int statusCode;
+    private String html;
+    private String path;
 }

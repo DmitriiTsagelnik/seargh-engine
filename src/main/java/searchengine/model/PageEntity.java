@@ -31,4 +31,7 @@ public class PageEntity {
     @Lob
     @Column(columnDefinition = "MEDIUMTEXT", nullable = false)
     private String content;
+
+    @Column(length = 255)
+    private String title;
 }

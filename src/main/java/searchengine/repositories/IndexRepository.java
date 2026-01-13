@@ -26,4 +26,15 @@ AND i.lemma IN :lemmas
             @Param("pages") List<PageEntity> pages,
             @Param("lemmas") List<LemmaEntity> lemmas
     );
+
+    @Query("""
+    SELECT i
+    FROM IndexEntity i
+    JOIN FETCH i.page p
+    JOIN FETCH p.site s
+    WHERE i.lemma IN :lemmas
+""")
+    List<IndexEntity> findAllByLemmasWithPages(
+            @Param("lemmas") List<LemmaEntity> lemmas
+    );
 }

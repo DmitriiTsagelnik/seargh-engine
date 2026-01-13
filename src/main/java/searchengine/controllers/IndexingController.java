@@ -2,6 +2,7 @@ package searchengine.controllers;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import searchengine.dto.statistics.StartIndexingResponse;
 import searchengine.dto.statistics.StatisticsResponse;
 import searchengine.services.IndexingService;
 
@@ -15,24 +16,24 @@ public class IndexingController {
     private final IndexingService indexingService;
 
     @GetMapping("/startIndexing")
-    public Map<String, Object> startIndexing() {
-        boolean start = indexingService.startIndexing();
-        return start ? Map.of("result", true) :
-                Map.of("result", false, "error", "индексация уже запущена");
+    public StartIndexingResponse startIndexing() {
+        boolean started = indexingService.startIndexing();
+        return started ? new StartIndexingResponse(true, null) :
+                new StartIndexingResponse(false, "индексация уже запущена");
     }
 
     @GetMapping("/stopIndexing")
-    public Map<String, Object> stopIndexing() {
+    public StartIndexingResponse stopIndexing() {
         boolean stopped = indexingService.stopIndexing();
-        return stopped ? Map.of("result", true) :
-                Map.of("result", false, "error", "Индексация не запущена");
+        return stopped ? new StartIndexingResponse(true, null) :
+                new StartIndexingResponse(false, "Индексация не запущена");
     }
 
     @PostMapping("/indexPage")
-    public Map<String, Object> indexPage(@RequestParam String url) {
+    public StartIndexingResponse indexPage(@RequestParam String url) {
         boolean success = indexingService.indexSinglePage(url);
-        return success ? Map.of("result", true) :
-                Map.of("result", false, "error",
+        return success ? new StartIndexingResponse(true,null) :
+                new StartIndexingResponse(false,
                         "Данная страница находится за пределами сайтов, указанных в конфигурации");
     }
 

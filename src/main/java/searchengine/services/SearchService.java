@@ -27,8 +27,6 @@ public class SearchService {
     private final IndexRepository indexRepository;
     private final SiteRepository siteRepository;
 
-    private final float MAX_FREQUENCY = 0.8f;
-
     @Transactional(readOnly = true)
     public SearchResponse search(String query, String siteUrl, int offset, int limit) {
 
@@ -60,43 +58,38 @@ public class SearchService {
             return response;
         }
 
-        List<LemmaEntity> lemmas = new ArrayList<>();
-        for (SiteEntity site : sites) {
-            for (String lemmaText : queryLemmas) {
-                lemmaRepository.findByLemmaAndSiteId(lemmaText, site.getId())
-                        .ifPresent(lemmas::add);
-            }
-        }
+        List<LemmaEntity> lemmas = lemmaRepository.findAllByLemmaInAndSiteIn(
+                queryLemmas,
+                sites
+        );
 
         if (lemmas.isEmpty()) {
             response.setResult(true);
-            response.setData(List.of());
             response.setCount(0);
+            response.setData(List.of());
             return response;
         }
 
         lemmas.sort(Comparator.comparing(LemmaEntity::getFrequency));
 
-        Set<PageEntity> pages = new HashSet<>();
-        for (LemmaEntity lemma : lemmas) {
-            List<IndexEntity> idxList = indexRepository.findAllByLemma(lemma);
-            for (IndexEntity idx : idxList) {
-                pages.add(idx.getPage());
-            }
-        }
+        List<IndexEntity> indexes =
+                indexRepository.findAllByLemmasWithPages(lemmas);
 
-        if (pages.isEmpty()) {
+        if (indexes.isEmpty()) {
             response.setResult(true);
-            response.setData(List.of());
             response.setCount(0);
+            response.setData(List.of());
             return response;
         }
 
-        List<IndexEntity> indexes = indexRepository.findAllByPagesAndLemmas(new ArrayList<>(pages), lemmas);
-
         Map<PageEntity, Float> absRelevance = new HashMap<>();
+
         for (IndexEntity index : indexes) {
-            absRelevance.merge(index.getPage(), index.getRank(), Float::sum);
+            absRelevance.merge(
+                    index.getPage(),
+                    index.getRank(),
+                    Float::sum
+            );
         }
 
         float maxAbsRelevance = absRelevance.values().stream()
@@ -114,9 +107,13 @@ public class SearchService {
                             page.getSite().getUrl(),
                             page.getSite().getName(),
                             page.getPath(),
-                            pageTitle(page.getContent()),
-                            snippetCreator.createSnippet(page.getContent(),
-                                    lemmas.stream().map(LemmaEntity::getLemma).collect(Collectors.toSet())),
+                            page.getTitle(),
+                            snippetCreator.createSnippet(
+                                    page.getContent(),
+                                    lemmas.stream()
+                                            .map(LemmaEntity::getLemma)
+                                            .collect(Collectors.toSet())
+                            ),
                             relevance
                     );
                 })
@@ -124,12 +121,8 @@ public class SearchService {
                 .toList();
 
         response.setResult(true);
-        response.setCount(results.size());
-        response.setData(results.stream()
-                .skip(offset)
-                .limit(limit)
-                .toList());
-
+        response.setCount(absRelevance.size());
+        response.setData(results);
         return response;
     }
 

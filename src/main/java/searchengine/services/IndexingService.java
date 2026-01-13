@@ -5,13 +5,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
 import org.springframework.stereotype.Service;
+import searchengine.config.ExecutorConfig;
 import searchengine.config.Site;
 import searchengine.config.SitesList;
-import searchengine.dto.statistics.DetailedStatisticsItem;
-import searchengine.dto.statistics.StatisticsData;
-import searchengine.dto.statistics.StatisticsResponse;
-import searchengine.dto.statistics.TotalStatistics;
+import searchengine.dto.statistics.*;
 import searchengine.model.*;
 import searchengine.repositories.IndexRepository;
 import searchengine.repositories.LemmaRepository;
@@ -25,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -40,6 +40,7 @@ public class IndexingService {
     private final PageRepository pageRepository;
     private final LemmaService lemmaService;
     private final SitesList sitesList;
+    private final Executor indexingExecutor;
 
     private final AtomicBoolean indexingIsRunning = new AtomicBoolean(false);
     private final AtomicInteger runningSites = new AtomicInteger();
@@ -55,7 +56,8 @@ public class IndexingService {
         runningSites.set(sites.size());
 
         for (Site site : sites) {
-            new Thread(() -> indexSite(site.getUrl(), site.getName())).start();
+            indexingExecutor.execute(() ->
+            indexSite(site.getUrl(), site.getName()));
         }
 
         return true;
@@ -130,12 +132,10 @@ public class IndexingService {
             siteEntity.setLastError("Критическая ошибка " + e.getMessage());
         } finally {
             siteEntity.setStatusTime(LocalDateTime.now());
-
-            if (siteHasError || (stopFlag != null && stopFlag.isStopped())) {
+            if (siteEntity.getLastError() != null || siteHasError || (stopFlag != null && stopFlag.isStopped())) {
                 siteEntity.setStatus(SiteStatus.FAILED);
                 log.error("\n\nИндексация сайта {} завершилась с ошибкой: {}\n", siteEntity.getUrl(),
-                        siteEntity.getLastError()
-                );
+                        siteEntity.getLastError());
             } else {
                 siteEntity.setStatus(SiteStatus.INDEXED);
                 log.info("\n\nИндексация сайта {} завершена\n", siteEntity.getUrl());
@@ -152,7 +152,6 @@ public class IndexingService {
         }
     }
 
-    @Transactional
     public boolean indexSinglePage(String url) {
         try {
             URI uri = URI.create(url);
@@ -162,83 +161,12 @@ public class IndexingService {
                     .anyMatch(s -> s.getUrl().equals(siteUrl));
             if (!siteAllowed) return false;
 
-            SiteEntity siteEntity = siteRepository.findByUrl(siteUrl)
-                    .orElseGet(() -> {
-                        SiteEntity newSite = new SiteEntity();
-                        newSite.setUrl(siteUrl);
-                        newSite.setName(siteUrl);
-                        newSite.setStatus(SiteStatus.INDEXED);
-                        newSite.setStatusTime(LocalDateTime.now());
-                        siteRepository.save(newSite);
-                        return newSite;
-                    });
-
-            String path = uri.getPath();
-            if (path.isEmpty()) path = "/";
-
-            pageRepository.findBySiteAndPath(siteEntity, path).ifPresent(oldPage -> {
-                indexRepository.deleteAllByPage(oldPage);
-                pageRepository.delete(oldPage);
-            });
-
-            Connection.Response response = Jsoup.connect(url)
-                    .userAgent(sitesList.getUserAgent())
-                    .referrer(sitesList.getReferrer())
-                    .timeout(10000)
-                    .ignoreHttpErrors(true)
-                    .execute();
-
-            int statusCode = response.statusCode();
-
-            if (statusCode >= 400) {
-                return false;
-            }
-
-            String html = response.body();
-
-            PageEntity page = new PageEntity();
-            page.setSite(siteEntity);
-            page.setPath(path);
-            page.setCode(statusCode);
-            page.setContent(html);
-            pageRepository.save(page);
-
-            Map<String, Integer> lemmaCount = lemmaService.getLemmasWithCount(html);
-
-            for (Map.Entry<String, Integer> entry : lemmaCount.entrySet()) {
-                String lemmaText = entry.getKey();
-                int count = entry.getValue();
-
-                Object lock = lemmaLocks.computeIfAbsent(lemmaText + "-" + siteEntity.getId(), k -> new Object());
-
-                synchronized (lock) {
-                    LemmaEntity lemmaEntity = lemmaRepository.findByLemmaAndSiteId(lemmaText, siteEntity.getId())
-                            .orElseGet(() -> {
-                                LemmaEntity newLemma = new LemmaEntity();
-                                newLemma.setLemma(lemmaText);
-                                newLemma.setSite(siteEntity);
-                                newLemma.setFrequency(1);
-                                lemmaRepository.save(newLemma);
-                                return newLemma;
-                            });
-
-                    if (lemmaEntity.getId() != null) {
-                        lemmaEntity.setFrequency(lemmaEntity.getFrequency() + 1);
-                        lemmaRepository.save(lemmaEntity);
-                    }
-
-                    if (!indexRepository.existsByPageAndLemma(page, lemmaEntity)) {
-                        IndexEntity indexEntity = new IndexEntity();
-                        indexEntity.setPage(page);
-                        indexEntity.setLemma(lemmaEntity);
-                        indexEntity.setRank((float) count);
-                        indexRepository.save(indexEntity);
-                    }
-                }
-            }
+            FetchResult fetchResult = fetchPage(url);
+            savePageAndIndex(siteUrl, fetchResult);
 
             return true;
         } catch (Exception e) {
+            log.error("Ошибка индексации страницы {}", url, e);
             return false;
         }
     }
@@ -276,6 +204,68 @@ public class IndexingService {
                 }
             }
         }
+    }
+
+    private FetchResult fetchPage(String url) throws Exception {
+        URI uri = URI.create(url);
+
+        String path = uri.getPath();
+        if (path.isEmpty()) {
+            path = "/";
+        }
+
+        Connection.Response response = Jsoup.connect(url)
+                .userAgent(sitesList.getUserAgent())
+                .referrer(sitesList.getReferrer())
+                .timeout(10000)
+                .ignoreHttpErrors(true)
+                .execute();
+
+        if (response.statusCode() >= 400) {
+            throw new IllegalStateException("HTTP error: " + response.statusCode());
+        }
+
+        FetchResult result = new FetchResult(
+        response.statusCode(),
+        response.body(),
+        path
+        );
+
+        return result;
+    }
+
+    @Transactional
+    protected void savePageAndIndex(String siteUrl, FetchResult fetchResult) {
+
+        SiteEntity siteEntity = siteRepository.findByUrl(siteUrl)
+                .orElseGet(() -> {
+                    SiteEntity newSite = new SiteEntity();
+                    newSite.setUrl(siteUrl);
+                    newSite.setName(siteUrl);
+                    newSite.setStatus(SiteStatus.INDEXED);
+                    newSite.setStatusTime(LocalDateTime.now());
+                    siteRepository.save(newSite);
+                    return newSite;
+                });
+
+        pageRepository.findBySiteAndPath(siteEntity, fetchResult.getPath())
+                .ifPresent(oldPage -> {
+                    indexRepository.deleteAllByPage(oldPage);
+                    pageRepository.delete(oldPage);
+                });
+
+        PageEntity page = new PageEntity();
+        page.setSite(siteEntity);
+        page.setPath(fetchResult.getPath());
+        page.setCode(fetchResult.getStatusCode());
+        page.setContent(fetchResult.getHtml());
+
+        Document doc = Jsoup.parse(fetchResult.getHtml());
+        page.setTitle(doc.title());
+
+        pageRepository.save(page);
+
+        processPage(page, fetchResult.getHtml());
     }
 
     public StatisticsResponse getStatistics() {
