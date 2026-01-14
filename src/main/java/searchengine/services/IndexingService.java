@@ -7,7 +7,6 @@ import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.springframework.stereotype.Service;
-import searchengine.config.ExecutorConfig;
 import searchengine.config.Site;
 import searchengine.config.SitesList;
 import searchengine.dto.statistics.*;
@@ -29,50 +28,93 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+
+/**
+ * Сервис IndexingService отвечает за индексацию сайтов и страниц.
+ *
+ * Основные задачи:
+ * - запуск и остановка индексации сайтов
+ * - загрузка страниц и извлечение контента
+ * - формирование лемм и их подсчёт
+ * - создание записей в поисковом индексе
+ * - предоставление статистики по сайтам и индексации
+ *
+ * Использует:
+ * - репозитории: SiteRepository, PageRepository, LemmaRepository, IndexRepository
+ * - сервис: LemmaService (для выделения лемм)
+ * - конфигурацию сайтов SitesList
+ * - многопоточность через Executor / ForkJoinPool
+ *
+ * Логика потокобезопасна:
+ * - AtomicBoolean и AtomicInteger контролируют состояние индексации
+ * - ConcurrentHashMap хранит флаги остановки и блокировки по леммам
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class IndexingService {
 
-    private final LemmaRepository lemmaRepository;
-    private final IndexRepository indexRepository;
-    private final SiteRepository siteRepository;
-    private final PageRepository pageRepository;
+    // Репозитории для работы с БД
+    private final LemmaRepository lemmaRepository;       // репозиторий лемм
+    private final IndexRepository indexRepository;       // репозиторий индекса
+    private final SiteRepository siteRepository;         // репозиторий сайтов
+    private final PageRepository pageRepository;         // репозиторий страниц
+
+    // Сервис для извлечения лемм из текста
     private final LemmaService lemmaService;
+
+    // Конфигурация сайтов (список сайтов, user-agent, referrer)
     private final SitesList sitesList;
+
+    // Executor для многопоточной индексации
     private final Executor indexingExecutor;
 
-    private final AtomicBoolean indexingIsRunning = new AtomicBoolean(false);
-    private final AtomicInteger runningSites = new AtomicInteger();
-    private final ConcurrentHashMap<String, SiteCrawl.StopFlag> stopFlags = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Object> lemmaLocks = new ConcurrentHashMap<>();
+    // Флаги и структуры для потокобезопасной работы
+    private final AtomicBoolean indexingIsRunning = new AtomicBoolean(false);  // флаг индексации
+    private final AtomicInteger runningSites = new AtomicInteger();           // количество сайтов в индексации
+    private final ConcurrentHashMap<String, SiteCrawl.StopFlag> stopFlags = new ConcurrentHashMap<>(); // флаги остановки сайтов
+    private final ConcurrentHashMap<String, Object> lemmaLocks = new ConcurrentHashMap<>(); // блокировки для лемм
 
+    /**
+     * Метод запускает индексацию всех сайтов из конфигурации.
+     * Проверяет, идет ли индексация, и если нет — запускает потоки для каждого сайта.
+     */
     public boolean startIndexing() {
-        if (!indexingIsRunning.compareAndSet(false, true)) {
-            return false;
+        if (!indexingIsRunning.compareAndSet(false, true)) { // проверка и установка флага
+            return false; // если уже идёт индексация — возвращаем false
         }
 
-        List<Site> sites = sitesList.getSites();
-        runningSites.set(sites.size());
+        List<Site> sites = sitesList.getSites(); // получаем список сайтов
+        runningSites.set(sites.size()); // сохраняем количество сайтов
 
         for (Site site : sites) {
-            indexingExecutor.execute(() ->
-            indexSite(site.getUrl(), site.getName()));
+            // Для каждого сайта создаем отдельный поток в executor
+            indexingExecutor.execute(() -> indexSite(site.getUrl(), site.getName()));
         }
 
         return true;
     }
 
+    /**
+     * Проверяет, выполняется ли индексация.
+     */
     public boolean isIndexing() {
         return indexingIsRunning.get();
     }
 
+    /**
+     * Останавливает текущую индексацию.
+     * - ставит флаги остановки для всех сайтов
+     * - меняет статус сайтов на FAILED
+     * - сохраняет сообщение об ошибке
+     */
     public boolean stopIndexing() {
         if (!indexingIsRunning.get()) return false;
 
-        stopFlags.values().forEach(
-                flag -> flag.stop("Индексация остановлена пользователем")
-        );
+        // Останавливаем все текущие потоки индексации сайтов
+        stopFlags.values().forEach(flag -> flag.stop("Индексация остановлена пользователем"));
+
+        // Меняем статус сайтов на FAILED и сохраняем в базу
         List<SiteEntity> indexingSites = siteRepository.findAllByStatus(SiteStatus.INDEXING);
         for (SiteEntity site : indexingSites) {
             site.setStatus(SiteStatus.FAILED);
@@ -80,22 +122,29 @@ public class IndexingService {
             site.setStatusTime(LocalDateTime.now());
             siteRepository.save(site);
         }
-        stopFlags.clear();
-        indexingIsRunning.set(false);
+
+        stopFlags.clear(); // очищаем флаги остановки
+        indexingIsRunning.set(false); // снимаем флаг работы индексации
         return true;
     }
 
+    /**
+     * Индексация одного сайта.
+     * Основной метод для обхода и сохранения страниц сайта.
+     */
     public void indexSite(String baseUrl, String siteName) {
         boolean siteHasError = false;
         SiteEntity siteEntity = new SiteEntity();
         SiteCrawl.StopFlag stopFlag = null;
 
         try {
+            // Если сайт уже есть — удаляем старые страницы и сам сайт
             siteRepository.findByUrl(baseUrl).ifPresent(oldSite -> {
                 pageRepository.deleteAllBySite(oldSite);
                 siteRepository.delete(oldSite);
             });
 
+            // Создаем новую запись сайта
             siteEntity.setUrl(baseUrl);
             siteEntity.setName(siteName);
             siteEntity.setStatus(SiteStatus.INDEXING);
@@ -108,10 +157,11 @@ public class IndexingService {
                 throw new IllegalArgumentException("Некорректный URL: " + baseUrl);
             }
 
-            Set<String> visited = ConcurrentHashMap.newKeySet();
-            stopFlag = new SiteCrawl.StopFlag();
+            Set<String> visited = ConcurrentHashMap.newKeySet(); // множество посещенных URL
+            stopFlag = new SiteCrawl.StopFlag(); // создаем stop-флаг для сайта
             stopFlags.put(baseUrl, stopFlag);
 
+            // Создаем ForkJoinPool для рекурсивного обхода сайта
             ForkJoinPool pool = new ForkJoinPool();
             pool.invoke(new SiteCrawl(
                     baseUrl,
@@ -127,10 +177,12 @@ public class IndexingService {
             ));
 
         } catch (Exception e) {
+            // Обработка критических ошибок
             siteHasError = true;
             siteEntity.setStatus(SiteStatus.FAILED);
             siteEntity.setLastError("Критическая ошибка " + e.getMessage());
         } finally {
+            // Обновление статуса сайта после завершения
             siteEntity.setStatusTime(LocalDateTime.now());
             if (siteEntity.getLastError() != null || siteHasError || (stopFlag != null && stopFlag.isStopped())) {
                 siteEntity.setStatus(SiteStatus.FAILED);
@@ -144,6 +196,7 @@ public class IndexingService {
             siteRepository.save(siteEntity);
             stopFlags.remove(baseUrl);
 
+            // Проверяем, завершились ли все сайты
             int remaining = runningSites.decrementAndGet();
             if (remaining == 0) {
                 indexingIsRunning.set(false);
@@ -152,15 +205,21 @@ public class IndexingService {
         }
     }
 
+    /**
+     * Индексация отдельной страницы.
+     * Проверяет разрешение сайта, загружает страницу и индексирует её.
+     */
     public boolean indexSinglePage(String url) {
         try {
             URI uri = URI.create(url);
             String siteUrl = uri.getScheme() + "://" + uri.getHost();
 
+            // Проверяем, разрешен ли сайт для индексации
             boolean siteAllowed = sitesList.getSites().stream()
                     .anyMatch(s -> s.getUrl().equals(siteUrl));
             if (!siteAllowed) return false;
 
+            // Загружаем страницу
             FetchResult fetchResult = fetchPage(url);
             savePageAndIndex(siteUrl, fetchResult);
 
@@ -171,6 +230,10 @@ public class IndexingService {
         }
     }
 
+    /**
+     * Обработка страницы: выделение лемм и формирование индекса.
+     * Потокобезопасная запись лемм и индекса в базу.
+     */
     @Transactional
     public void processPage(PageEntity page, String html) {
         Map<String, Integer> lemmaCount = lemmaService.getLemmasWithCount(html);
@@ -179,9 +242,11 @@ public class IndexingService {
             String lemmaText = entry.getKey();
             int count = entry.getValue();
 
+            // Потокобезопасная блокировка по лемме и сайту
             Object lock = lemmaLocks.computeIfAbsent(lemmaText + "-" + page.getSite().getId(), k -> new Object());
 
             synchronized (lock) {
+                // Находим или создаем лемму
                 LemmaEntity lemmaEntity = lemmaRepository.findByLemmaAndSiteId(lemmaText, page.getSite().getId())
                         .orElseGet(() -> {
                             LemmaEntity newLemma = new LemmaEntity();
@@ -192,6 +257,7 @@ public class IndexingService {
                             return newLemma;
                         });
 
+                // Если индекс для страницы и леммы ещё не создан
                 if (!indexRepository.existsByPageAndLemma(page, lemmaEntity)) {
                     lemmaEntity.setFrequency(lemmaEntity.getFrequency() + 1);
                     lemmaRepository.save(lemmaEntity);
@@ -206,6 +272,10 @@ public class IndexingService {
         }
     }
 
+    /**
+     * Загрузка страницы через Jsoup.
+     * Возвращает FetchResult с кодом статуса, HTML и путём.
+     */
     private FetchResult fetchPage(String url) throws Exception {
         URI uri = URI.create(url);
 
@@ -225,15 +295,19 @@ public class IndexingService {
             throw new IllegalStateException("HTTP error: " + response.statusCode());
         }
 
-        FetchResult result = new FetchResult(
-        response.statusCode(),
-        response.body(),
-        path
+        return new FetchResult(
+                response.statusCode(),
+                response.body(),
+                path
         );
-
-        return result;
     }
 
+    /**
+     * Сохраняет страницу и индексирует её леммы.
+     * - Создаёт PageEntity
+     * - Сохраняет HTML и заголовок
+     * - Вызывает processPage
+     */
     @Transactional
     protected void savePageAndIndex(String siteUrl, FetchResult fetchResult) {
 
@@ -268,6 +342,12 @@ public class IndexingService {
         processPage(page, fetchResult.getHtml());
     }
 
+    /**
+     * Формирует объект StatisticsResponse для API.
+     * - собирает все сайты
+     * - считает общее количество страниц и лемм
+     * - формирует TotalStatistics и DetailedStatisticsItem
+     */
     public StatisticsResponse getStatistics() {
         List<SiteEntity> sites = siteRepository.findAll();
 
@@ -308,4 +388,5 @@ public class IndexingService {
         return response;
     }
 }
+
 
