@@ -150,7 +150,7 @@ Maven
 MySQL 8+
 Steps
 Clone repository:
-git clone https://github.com/DmitriiTsagelnik/seargh-engine.git
+git clone https://github.com/DmitriiTsagelnik/search-engine.git
 Configure database connection.
 Create database:
 CREATE DATABASE search_engine;
