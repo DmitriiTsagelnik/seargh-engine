@@ -1,7 +1,9 @@
 HELP.md
 target/
 !.mvn/wrapper/maven-wrapper.jar
-./application.yaml
+.env
+application-local.yaml
+application-local.properties
 !**/src/main/**/target/
 !**/src/test/**/target/
 
