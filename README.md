@@ -2,74 +2,74 @@
 
 Backend application for indexing websites and searching information by content.
 
-The application crawls websites, analyzes page content, creates a search index and provides search functionality through a REST API.
+The application crawls websites, analyzes page content, creates a search index and provides search functionality through a REST API and web interface.
 
 ## Features
 
-- Website indexing
-- Multithreaded page crawling
-- HTML content parsing
-- Russian language lemmatization
-- Search by query relevance
-- REST API for indexing and searching
-- Data storage in MySQL database
+* Website indexing
+* Multithreaded page crawling
+* HTML content parsing
+* Russian language lemmatization
+* Search by query relevance
+* REST API for indexing and searching
+* Web interface for managing indexing and search
+* Data storage in MySQL database
 
 ## Technologies
 
 ### Backend
-- Java 17+
-- Spring Boot
-- Spring MVC
-- Spring Data JPA
-- Hibernate
-- REST API
+
+* Java 17+
+* Spring Boot
+* Spring MVC
+* Spring Data JPA
+* Hibernate
+* REST API
 
 ### Database
-- MySQL
+
+* MySQL
 
 ### Libraries
-- Jsoup — HTML parsing
-- Apache Lucene Morphology — Russian word lemmatization
+
+* Jsoup — HTML parsing
+* Apache Lucene Morphology — Russian word lemmatization
 
 ### Tools
-- Maven
-- Git
-- IntelliJ IDEA
+
+* Maven
+* Git
+* IntelliJ IDEA
 
 ## Application Architecture
 
 The project follows a layered architecture:
 
-
-Controller
-|
-Service
-|
-Repository
-|
-Database
-
+```
+Controller → Service → Repository → Database
+```
 
 Main components:
 
-- **Controllers** — handle HTTP requests and provide REST API endpoints
-- **Services** — contain business logic
-- **Repositories** — database interaction using Spring Data JPA
-- **Entities** — represent database tables
+* Controllers — handle HTTP requests and provide REST API endpoints
+* Services — contain business logic
+* Repositories — database interaction using Spring Data JPA
+* Entities — represent database tables
+* DTO — transfer data between application layers
 
 ## Database Structure
 
 The application uses the following entities:
 
-- `Site` — stores information about indexed websites
-- `Page` — stores indexed pages
-- `Lemma` — stores normalized words from page content
-- `Index` — connects pages with lemmas and stores ranking information
+* Site — stores information about indexed websites
+* Page — stores indexed pages
+* Lemma — stores normalized words from page content
+* Index — connects pages with lemmas and stores ranking information
 
 ## Indexing Process
 
 1. User starts website indexing through REST API.
-2. Application crawls website pages.
+2. Application crawls website pages using multithreaded processing.
 3. HTML content is extracted and cleaned.
 4. Words are converted into their normal forms (lemmas).
 5. Index data is stored in MySQL database.
@@ -82,58 +82,57 @@ The application uses the following entities:
 4. Results are ranked by relevance.
 5. Matching pages are returned through REST API.
 
+## Web Interface
+
+The application includes a simple web interface for:
+
+* starting and stopping indexing;
+* adding individual pages for indexing;
+* viewing statistics;
+* performing search queries.
+
+The frontend communicates with the backend through REST API endpoints.
+
 ## REST API
 
 ### Start indexing
 
-
+```
 POST /api/startIndexing
-
+```
 
 Starts indexing of configured websites.
 
----
-
 ### Stop indexing
 
-
+```
 GET /api/stopIndexing
-
+```
 
 Stops the current indexing process.
 
----
-
 ### Index single page
 
-
+```
 POST /api/indexPage
-
+```
 
 Adds a single page to the search index.
 
----
-
 ### Search
 
-
-GET /api/search
-
+```
+GET /api/search?query=java
+```
 
 Searches indexed pages by query.
-
-Example:
-
-
-GET /api/search?query=java
-
 
 ## Configuration
 
 Before running the application, configure:
 
-- MySQL database connection
-- Websites for indexing
+* MySQL database connection
+* Websites for indexing
 
 Example:
 
@@ -143,24 +142,50 @@ spring:
     url: jdbc:mysql://localhost:3306/search_engine
     username: root
     password: your_password
-How to Run
-Requirements
-Java 23+
-Maven
-MySQL 8+
-Steps
+```
+
+## How to Run
+
+### Requirements
+
+* Java 17+
+* Maven
+* MySQL 8+
+
+### Steps
+
 Clone repository:
+
+```bash
 git clone https://github.com/DmitriiTsagelnik/search-engine.git
-Configure database connection.
+```
+
 Create database:
+
+```sql
 CREATE DATABASE search_engine;
+```
+
+Configure database connection in `application.yaml`.
+
 Run application:
+
+```bash
 mvn spring-boot:run
-Project Status
+```
 
-Backend application demonstrating website indexing, search functionality, REST API design, database integration and Spring Boot development practices.
+## Project Status
 
-Author
+Backend application demonstrating:
+
+* Spring Boot development
+* REST API design
+* database integration
+* website crawling
+* search indexing algorithms
+* text processing and lemmatization
+
+## Author
 
 Dmitrii Tsagelnik
 
