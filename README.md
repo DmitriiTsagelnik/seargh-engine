@@ -17,7 +17,7 @@ The application crawls websites, analyzes page content, creates a search index a
 ## Technologies
 
 ### Backend
-- Java 23
+- Java 17+
 - Spring Boot
 - Spring MVC
 - Spring Data JPA
@@ -158,7 +158,7 @@ Run application:
 mvn spring-boot:run
 Project Status
 
-Completed learning project demonstrating backend development with Spring Boot, database integration, REST API design and search engine implementation.
+Backend application demonstrating website indexing, search functionality, REST API design, database integration and Spring Boot development practices.
 
 Author
 
