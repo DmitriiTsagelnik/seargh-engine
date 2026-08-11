@@ -1,0 +1,25 @@
+services:
+
+  mysql:
+    image: mysql:8.0
+    container_name: search-engine-mysql
+    environment:
+      MYSQL_DATABASE: search_engine
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  app:
+    build: .
+    container_name: search-engine-app
+    depends_on:
+      - mysql
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    ports:
+      - "8080:8080"
+
+volumes:
+  mysql_data:
