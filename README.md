@@ -1,26 +1,84 @@
 # Search Engine
 
-Backend application for indexing websites and searching information by content.
+A full-stack search engine application built with **Java and Spring Boot**.
 
-The application crawls websites, analyzes page content, creates a search index and provides search functionality through a REST API and web interface.
+The application crawls configured websites, analyzes their content, builds a searchable index and provides relevant search results through both a **web interface** and a **REST API**.
+
+The project demonstrates backend development, database integration, multithreaded web crawling, text processing, search indexing and containerized deployment.
+
+---
 
 ## Features
 
 * Website indexing
-* Multithreaded page crawling
+* Multithreaded website crawling
 * HTML content parsing
 * Russian language lemmatization
-* Search by query relevance
-* REST API for indexing and searching
-* Web interface for managing indexing and search
-* Data storage in MySQL database
+* Search by query
+* Search result relevance ranking
+* Website-specific search
+* Indexing individual pages
+* Indexing status monitoring
+* REST API
+* Swagger / OpenAPI documentation
+* Web interface
+* MySQL database
+* Docker and Docker Compose support
+
+---
+
+## Web Interface
+
+The application provides a web interface for interacting with the search engine.
+
+The interface allows users to:
+
+* start and stop website indexing;
+* view the indexing status of configured websites;
+* index individual pages;
+* view indexing statistics;
+* perform searches;
+* select a specific website for searching;
+* view search results with page title, URL and relevance.
+
+The frontend communicates with the backend through the REST API.
+
+When running locally, the web interface is available at:
+
+```text
+http://localhost:8080/
+```
+
+### Interface
+
+![Search Engine Web Interface](docs/screenshots/web-interface.png)
+
+---
+
+## Swagger / OpenAPI
+
+The REST API is documented using **Swagger / OpenAPI**.
+
+Swagger UI provides an interactive interface for viewing and testing all available API endpoints.
+
+When the application is running:
+
+```text
+http://localhost:8080/swagger-ui/index.html
+```
+
+### Swagger UI
+
+![Swagger UI](docs/screenshots/swagger.png)
+
+---
 
 ## Technologies
 
 ### Backend
 
-* Java 17+
-* Spring Boot
+* Java 23
+* Spring Boot 3
 * Spring MVC
 * Spring Data JPA
 * Hibernate
@@ -28,84 +86,182 @@ The application crawls websites, analyzes page content, creates a search index a
 
 ### Database
 
-* MySQL
+* MySQL 8
 
 ### Libraries
 
-* Jsoup — HTML parsing
-* Apache Lucene Morphology — Russian word lemmatization
+* Jsoup — HTML parsing and website crawling
+* Apache Lucene Morphology — Russian language lemmatization
+* Lombok
+* Springdoc OpenAPI — Swagger documentation
+* Thymeleaf — web interface
 
 ### Tools
 
 * Maven
 * Git
+* GitHub
 * IntelliJ IDEA
+* Docker
+* Docker Compose
+
+---
 
 ## Application Architecture
 
 The project follows a layered architecture:
 
+```text
+Controller
+    ↓
+Service
+    ↓
+Repository
+    ↓
+Database
 ```
-Controller → Service → Repository → Database
-```
 
-Main components:
+### Main components
 
-* Controllers — handle HTTP requests and provide REST API endpoints
-* Services — contain business logic
-* Repositories — database interaction using Spring Data JPA
-* Entities — represent database tables
-* DTO — transfer data between application layers
+**Controllers**
 
-## Database Structure
+Handle HTTP requests and provide the REST API.
 
-The application uses the following entities:
+**Services**
 
-* Site — stores information about indexed websites
-* Page — stores indexed pages
-* Lemma — stores normalized words from page content
-* Index — connects pages with lemmas and stores ranking information
+Contain the main business logic of indexing, text processing and searching.
+
+**Repositories**
+
+Provide database access using Spring Data JPA.
+
+**Entities**
+
+Represent database tables and relationships.
+
+**DTO**
+
+Transfer data between the application layers and API.
+
+---
 
 ## Indexing Process
 
-1. User starts website indexing through REST API.
-2. Application crawls website pages using multithreaded processing.
-3. HTML content is extracted and cleaned.
-4. Words are converted into their normal forms (lemmas).
-5. Index data is stored in MySQL database.
+The indexing process works as follows:
+
+```text
+Website
+   ↓
+Web Crawler
+   ↓
+HTML Parsing
+   ↓
+Text Extraction
+   ↓
+Lemmatization
+   ↓
+Search Index
+   ↓
+MySQL
+```
+
+1. User starts indexing through the web interface or REST API.
+2. The application crawls the configured website.
+3. Pages are processed using multithreaded crawling.
+4. HTML content is extracted and cleaned.
+5. Words are converted into their normal forms (lemmas).
+6. Lemmas and page information are stored in MySQL.
+7. The resulting data is used for search.
+
+The crawler uses concurrent processing to improve indexing performance on websites with multiple pages.
+
+---
 
 ## Search Process
 
-1. User sends a search query.
-2. Query text is converted into lemmas.
-3. Application finds pages containing matching lemmas.
-4. Results are ranked by relevance.
-5. Matching pages are returned through REST API.
+The search process consists of several stages:
 
-## Web Interface
+```text
+Search Query
+     ↓
+Lemmatization
+     ↓
+Lemma Selection
+     ↓
+Page Matching
+     ↓
+Relevance Calculation
+     ↓
+Sorted Results
+```
 
-The application includes a simple web interface for:
+1. User enters a search query.
+2. The query is converted into normalized lemmas.
+3. Common lemmas are filtered when necessary.
+4. Pages containing the required lemmas are found.
+5. Matching pages are ranked according to relevance.
+6. Search results are returned through the API and displayed in the web interface.
 
-* starting and stopping indexing;
-* adding individual pages for indexing;
-* viewing statistics;
-* performing search queries.
+---
 
-The frontend communicates with the backend through REST API endpoints.
+## Database Structure
+
+The application uses MySQL for persistent storage.
+
+Main entities:
+
+### Site
+
+Stores information about indexed websites:
+
+* URL
+* name
+* indexing status
+* status time
+* error information
+
+### Page
+
+Stores indexed website pages:
+
+* website
+* page path
+* HTTP response code
+* page content
+
+### Lemma
+
+Stores normalized words extracted from page content and their frequency.
+
+### Index
+
+Connects pages with lemmas and stores ranking information used during search.
+
+Simplified relationship:
+
+```text
+Site
+ ├── Page
+ │    └── Index ─── Lemma
+ │
+ └── ...
+```
+
+---
 
 ## REST API
 
 ### Start indexing
 
-```
+```http
 POST /api/startIndexing
 ```
 
-Starts indexing of configured websites.
+Starts indexing of all configured websites.
 
 ### Stop indexing
 
-```
+```http
 GET /api/stopIndexing
 ```
 
@@ -113,7 +269,7 @@ Stops the current indexing process.
 
 ### Index single page
 
-```
+```http
 POST /api/indexPage
 ```
 
@@ -121,18 +277,21 @@ Adds a single page to the search index.
 
 ### Search
 
-```
+```http
 GET /api/search?query=java
 ```
 
 Searches indexed pages by query.
 
+The API also supports selecting a specific website and pagination of search results.
+
+For the complete API specification and available parameters, use Swagger UI.
+
+---
+
 ## Configuration
 
-Before running the application, configure:
-
-* MySQL database connection
-* Websites for indexing
+Application settings are stored in `application.yaml`.
 
 Example:
 
@@ -142,52 +301,213 @@ spring:
     url: jdbc:mysql://localhost:3306/search_engine
     username: root
     password: your_password
+
+indexing-settings:
+  user-agent: Mozilla/5.0 (compatible; SearchBot/1.0)
+  referrer: http://google.com
+  max-depth: 4
+
+sites:
+  - url: https://www.aviasales.by/
+    name: Дешевые авиабилеты
+
+  - url: https://gomelkino.by/
+    name: Лучшие новинки гомельского кино
 ```
 
-## How to Run
+---
 
-### Requirements
+# Running Locally
 
-* Java 17+
+## Requirements
+
+* Java 23
 * Maven
-* MySQL 8+
+* MySQL 8
 
-### Steps
-
-Clone repository:
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/DmitriiTsagelnik/search-engine.git
+cd search-engine
 ```
 
-Create database:
+### 2. Create the database
 
 ```sql
 CREATE DATABASE search_engine;
 ```
 
-Configure database connection in `application.yaml`.
+### 3. Configure the database
 
-Run application:
+Update the database credentials in:
+
+```text
+src/main/resources/application.yaml
+```
+
+### 4. Build the application
+
+```bash
+mvn clean package
+```
+
+### 5. Run the application
 
 ```bash
 mvn spring-boot:run
 ```
 
+The application will be available at:
+
+```text
+http://localhost:8080/
+```
+
+Swagger UI:
+
+```text
+http://localhost:8080/swagger-ui/index.html
+```
+
+---
+
+# Running with Docker
+
+The project includes Docker configuration for running the application together with MySQL.
+
+### Requirements
+
+* Docker
+* Docker Compose
+
+### Start the application
+
+First build the application:
+
+```bash
+mvn clean package
+```
+
+Then run:
+
+```bash
+docker compose up --build
+```
+
+Docker Compose starts:
+
+```text
+┌─────────────────────┐
+│   Search Engine     │
+│   Spring Boot       │
+│   :8080             │
+└──────────┬──────────┘
+           │
+           │
+┌──────────▼──────────┐
+│       MySQL         │
+│       :3306         │
+└─────────────────────┘
+```
+
+The application will be available at:
+
+```text
+http://localhost:8080/
+```
+
+Swagger UI:
+
+```text
+http://localhost:8080/swagger-ui/index.html
+```
+
+MySQL data is persisted using a Docker volume.
+
+To stop the application:
+
+```bash
+docker compose down
+```
+
+---
+
+## Project Structure
+
+```text
+search-engine/
+│
+├── src/
+│   ├── main/
+│   │   ├── java/
+│   │   │   └── searchengine/
+│   │   │       ├── config/
+│   │   │       ├── controllers/
+│   │   │       ├── dto/
+│   │   │       ├── model/
+│   │   │       ├── repositories/
+│   │   │       └── services/
+│   │   │
+│   │   └── resources/
+│   │       ├── static/
+│   │       ├── templates/
+│   │       └── application.yaml
+│   │
+│   └── test/
+│
+├── Dockerfile
+├── docker-compose.yaml
+├── pom.xml
+└── README.md
+```
+
+---
+
+## Project Highlights
+
+This project demonstrates practical experience with:
+
+* Java backend development
+* Spring Boot
+* REST API design
+* Spring Data JPA
+* Hibernate
+* MySQL
+* multithreading and concurrent processing
+* web crawling
+* HTML parsing
+* text normalization and lemmatization
+* search indexing
+* relevance ranking
+* layered application architecture
+* Swagger / OpenAPI
+* Docker
+* Docker Compose
+* Git and GitHub
+
+---
+
 ## Project Status
 
-Backend application demonstrating:
+The project is a working search engine application with:
 
-* Spring Boot development
-* REST API design
-* database integration
-* website crawling
-* search indexing algorithms
-* text processing and lemmatization
+* web interface;
+* REST API;
+* Swagger documentation;
+* website indexing;
+* multithreaded crawling;
+* Russian language lemmatization;
+* relevance-based search;
+* MySQL persistence;
+* Docker Compose deployment.
+
+---
 
 ## Author
 
-Dmitrii Tsagelnik
+**Dmitrii Tsagelnik**
 
 GitHub:
+
 https://github.com/DmitriiTsagelnik

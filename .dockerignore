@@ -1,0 +1,6 @@
+.git
+.idea
+*.iml
+target/*
+!target/search-engine-1.0.0.jar
+README.mdq
